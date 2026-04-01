@@ -1,9 +1,7 @@
 export type Word = {
-    id: string;
     word: string;
     meaning: string;
     example?: string;
-    createdAt: number;
 };
 
 export type UserProfile = {
@@ -20,34 +18,36 @@ export function getWords(): Word[] {
     return data ? JSON.parse(data) : [];
 }
 
-export function saveWord(word: Omit<Word, "id" | "createdAt">): Word {
+export function saveWord(word: Word): Word {
     const words = getWords();
-    const newWord: Word = {
-        ...word,
-        id: crypto.randomUUID(),
-        createdAt: Date.now(),
-    };
-    words.push(newWord);
+    const existingIndex = words.findIndex(w => w.word === word.word);
+
+    if (existingIndex !== -1) {
+        words[existingIndex] = { ...words[existingIndex], ...word };
+    } else {
+        words.push(word);
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
-    return newWord;
+    return word;
 }
 
 export function saveWords(words: Word[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
 }
 
-export function updateWord(id: string, updates: Partial<Word>): void {
+export function updateWord(targetWord: string, updates: Partial<Word>): void {
     const words = getWords();
-    const index = words.findIndex((w) => w.id === id);
+    const index = words.findIndex((w) => w.word === targetWord);
     if (index !== -1) {
         words[index] = { ...words[index], ...updates };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
     }
 }
 
-export function deleteWord(id: string): void {
+export function deleteWord(targetWord: string): void {
     const words = getWords();
-    const filtered = words.filter((w) => w.id !== id);
+    const filtered = words.filter((w) => w.word !== targetWord);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
 }
 
