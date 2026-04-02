@@ -89,13 +89,23 @@ export default function VocabularyPage() {
         setError(null);
 
         try {
-            const response = await fetch("/api/generate", {
+            const isNative = typeof window !== "undefined" &&
+                ((window as any).Capacitor?.isNativePlatform || window.location.protocol === 'capacitor:');
+
+            const apiUrl = isNative
+                ? "https://kotoflash.vercel.app/api/generate"
+                : "/api/generate";
+
+            const response = await fetch(apiUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ prompt: userPrompt }),
             });
 
-            if (!response.ok) throw new Error("Gagal membuat kosa kata. Coba lagi nanti.");
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || "Gagal membuat kosa kata. Coba lagi nanti.");
+            }
 
             const data = await response.json();
             const rawData: Word[] = data.words;

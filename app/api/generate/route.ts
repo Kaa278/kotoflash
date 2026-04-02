@@ -105,6 +105,16 @@ KETENTUAN IDENTITAS:
 }
 
 
+export async function OPTIONS() {
+    return NextResponse.json({}, {
+        headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        }
+    });
+}
+
 export async function POST(req: Request) {
     try {
         const { prompt: userPrompt } = await req.json();
@@ -113,7 +123,10 @@ export async function POST(req: Request) {
         const model = process.env.LLM_MODEL || "llama3-8b-instruct";
         const baseURL = process.env.LLM_BASE_URL || "https://ai.gateway.syi.fan/v1";
 
-        if (!apiKey) return NextResponse.json({ error: "API key not configured" }, { status: 500 });
+        if (!apiKey) return NextResponse.json({ error: "API key not configured" }, {
+            status: 500,
+            headers: { "Access-Control-Allow-Origin": "*" }
+        });
 
         // 1. ANALYZE INTENT
         const intent = await analyzeIntent(apiKey, baseURL, model, userPrompt);
@@ -130,7 +143,7 @@ export async function POST(req: Request) {
             return NextResponse.json({
                 words: [],
                 message: intent.message
-            });
+            }, { headers: { "Access-Control-Allow-Origin": "*" } });
         }
 
         // 0. PRIORITIZE PROVIDED WORDS (from external input)
@@ -193,9 +206,16 @@ export async function POST(req: Request) {
         return NextResponse.json({
             words: finalWords,
             message: intent.message
+        }, {
+            headers: {
+                "Access-Control-Allow-Origin": "*",
+            }
         });
     } catch (error) {
         console.error("Critical API Error:", error);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal server error" }, {
+            status: 500,
+            headers: { "Access-Control-Allow-Origin": "*" }
+        });
     }
 }

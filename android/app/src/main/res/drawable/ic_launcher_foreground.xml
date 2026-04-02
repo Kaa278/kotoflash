@@ -1,0 +1,48 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Centered and scaled down content for Adaptive Icon Safe Zone -->
+    <group
+        android:translateX="15"
+        android:translateY="15"
+        android:scaleX="0.7"
+        android:scaleY="0.7">
+        <!-- Main Circle -->
+        <path
+            android:fillColor="#BC002D"
+            android:pathData="M50,50m-48,0a48,48 0,1 1,96 0a48,48 0,1 1,-96 0" />
+        
+        <!-- Shadow Card -->
+        <path
+            android:fillColor="#1A000000"
+            android:pathData="M30,31h32c2.2,0 4,1.8 4,4v42c0,2.2 -1.8,4 -4,4h-32c-2.2,0 -4,-1.8 -4,-4v-42c0,-2.2 1.8,-4 4,-4z" />
+        
+        <!-- Back Card -->
+        <path
+            android:fillColor="#F5F5F5"
+            android:pathData="M29,30h32c2.2,0 4,1.8 4,4v42c0,2.2 -1.8,4 -4,4h-32c-2.2,0 -4,-1.8 -4,-4v-42c0,-2.2 1.8,-4 4,-4z" />
+        
+        <!-- Middle Card -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#E0E0E0"
+            android:strokeWidth="0.5"
+            android:pathData="M34,25h32c2.2,0 4,1.8 4,4v42c0,2.2 -1.8,4 -4,4h-32c-2.2,0 -4,-1.8 -4,-4v-42c0,-2.2 1.8,-4 4,-4z" />
+        
+        <!-- Front Card -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#BC002D"
+            android:strokeWidth="1.5"
+            android:pathData="M39,20h32c2.2,0 4,1.8 4,4v42c0,2.2 -1.8,4 -4,4h-32c-2.2,0 -4,-1.8 -4,-4v-42c0,-2.2 1.8,-4 4,-4z" />
+        
+        <!-- Plus Icon -->
+        <path
+            android:strokeColor="#BC002D"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:pathData="M55,40v10M50,45h10" />
+    </group>
+</vector>
