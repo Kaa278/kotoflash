@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getWords, saveWord, deleteWord, Word, updateWord, isLoggedIn, syncWordsWithCloud } from "@/lib/storage";
+import { getApiUrl } from "@/lib/api";
 import { Trash2, Plus, Languages, BookText, AlertCircle, Sparkles, Loader2, Wand2, X, Check, Save, Send, MessageSquare, Bot, User, Search, CheckSquare, Square, MinusSquare, ListChecks, CheckCheck, ArrowUpDown, SortAsc, SortDesc, Clock, Calendar } from "lucide-react";
 
 export default function VocabularyPage() {
@@ -98,12 +99,7 @@ export default function VocabularyPage() {
         setError(null);
 
         try {
-            const isNative = typeof window !== "undefined" &&
-                ((window as any).Capacitor?.isNativePlatform || window.location.protocol === 'capacitor:');
-
-            const apiUrl = isNative
-                ? "https://kotoflash.vercel.app/api/generate"
-                : "/api/generate";
+            const apiUrl = getApiUrl("/generate");
 
             const response = await fetch(apiUrl, {
                 method: "POST",

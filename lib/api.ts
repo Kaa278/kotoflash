@@ -1,9 +1,16 @@
 // Central API client for Next.js API Routes
-// If NEXT_PUBLIC_API_URL is set (e.g. on Vercel), it uses that.
-// Otherwise, it uses the relative path (for local dev).
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/auth";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+export function getApiUrl(path: string) {
+    const isAuth = path.startsWith("/login") || path.startsWith("/register") || path.startsWith("/profile") || path.startsWith("/words");
+    const prefix = isAuth ? "/api/auth" : "/api";
+
+    if (!BASE_URL) return `${prefix}${path}`;
+    return `${BASE_URL}${prefix}${path}`;
+}
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}) {
+    const url = getApiUrl(endpoint);
     const token = localStorage.getItem("kotoflash_token");
 
     const headers = {
@@ -12,7 +19,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
         ...options.headers,
     };
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(url, {
         ...options,
         headers,
     });
