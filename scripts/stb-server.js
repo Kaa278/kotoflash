@@ -25,6 +25,12 @@ console.log('--------------------');
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Logging Middleware
+app.use((req, res, next) => {
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 // Database connection pool
 const pool = mysql.createPool({
     host: process.env.DB_HOST || '127.0.0.1',
@@ -192,8 +198,24 @@ app.post('/api/generate', async (req, res) => {
         if (!apiKey) return res.status(500).json({ error: "LLM_API_KEY not configured on STB" });
 
         // 1. Analyze Intent
-        const systemPrompt = `Anda adalah analis niat (intent analyzer) dan pemroses kosa kata. ... (omitted for brevity, assume full prompt) ...`;
-        // For brevity in this edit, I'll use a simplified fetch but in reality I'll include the full logic
+        const systemPrompt = `Anda adalah analis niat (intent analyzer) dan pemroses kosa kata.
+Tugas Anda adalah mengekstrak TOPIK, JUMLAH, KATA KUNCI, dan KOSA KATA yang diberikan pengguna (jika ada).
+FORMAT JSON:
+{
+  "topic": "nama topik tunggal",
+  "count": angka_jumlah,
+  "keywords": ["keyword1", "keyword2"],
+  "providedWords": [{"word": "hiragana (romaji)", "meaning": "arti"}],
+  "message": "respon ramah dari Kathlyn",
+  "formatPreference": "both"
+}
+
+KETENTUAN:
+1. Nama Anda Kathlyn, ramah dan supel.
+2. Jika user menyapa (halo/hi/pagi), sambut hangat dan berikan 5-10 kosa kata dasar jika tidak ada topik spesifik.
+3. JANGAN pakai kata sistem/database. 
+4. Output HARUS valid JSON.`;
+
         const aiResponse = await fetch(`${baseURL}/chat/completions`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },

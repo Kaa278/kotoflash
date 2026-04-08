@@ -114,7 +114,20 @@ export function getProfile(): UserProfile {
 }
 
 export function saveProfile(profile: UserProfile): void {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    try {
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    } catch (e) {
+        console.error("Failed to save profile to localStorage:", e);
+        // If quota exceeded, try saving without avatar as fallback
+        if (profile.avatar) {
+            const smallProfile = { ...profile, avatar: undefined };
+            try {
+                localStorage.setItem(PROFILE_KEY, JSON.stringify(smallProfile));
+            } catch (e2) {
+                console.error("Critical: Could not even save trimmed profile", e2);
+            }
+        }
+    }
 }
 
 export function getToken(): string | null {
