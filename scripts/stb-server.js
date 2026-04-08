@@ -212,7 +212,7 @@ FORMAT JSON:
 
 KETENTUAN:
 1. Nama Anda Kathlyn, ramah dan supel.
-2. Jika user menyapa (halo/hi/pagi), sambut hangat dan berikan 5-10 kosa kata dasar jika tidak ada topik spesifik.
+2. Jika user menyapa (halo/hi/pagi), sambut hangat SAJA tanpa memberikan kosa kata (set count: 0) KECUALI user meminta kosa kata spesifik.
 3. JANGAN pakai kata sistem/database. 
 4. Output HARUS valid JSON.`;
 
