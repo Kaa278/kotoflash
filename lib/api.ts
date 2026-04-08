@@ -1,6 +1,7 @@
 // Central API client for Next.js API Routes
-// This works on both Laptop (dev) and STB (prod) using relative paths.
-const API_BASE_URL = "/api/auth";
+// If NEXT_PUBLIC_API_URL is set (e.g. on Vercel), it uses that.
+// Otherwise, it uses the relative path (for local dev).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api/auth";
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}) {
     const token = localStorage.getItem("kotoflash_token");
