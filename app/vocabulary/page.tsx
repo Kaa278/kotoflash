@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getWords, saveWord, deleteWord, Word, updateWord } from "@/lib/storage";
+import { getWords, saveWord, deleteWord, Word, updateWord, isLoggedIn, syncWordsWithCloud } from "@/lib/storage";
 import { Trash2, Plus, Languages, BookText, AlertCircle, Sparkles, Loader2, Wand2, X, Check, Save, Send, MessageSquare, Bot, User, Search, CheckSquare, Square, MinusSquare, ListChecks, CheckCheck, ArrowUpDown, SortAsc, SortDesc, Clock, Calendar } from "lucide-react";
 
 export default function VocabularyPage() {
@@ -14,6 +14,7 @@ export default function VocabularyPage() {
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [chatInput, setChatInput] = useState("");
     const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string; hasAction?: boolean }[]>([]);
     const [generatedWords, setGeneratedWords] = useState<Word[]>([]);
@@ -33,6 +34,14 @@ export default function VocabularyPage() {
     useEffect(() => {
         setWords(getWords());
         setMounted(true);
+
+        if (isLoggedIn()) {
+            setIsSyncing(true);
+            syncWordsWithCloud()
+                .then(() => setWords(getWords()))
+                .catch(err => console.error("Vocab sync failed:", err))
+                .finally(() => setIsSyncing(false));
+        }
     }, []);
 
     useEffect(() => {

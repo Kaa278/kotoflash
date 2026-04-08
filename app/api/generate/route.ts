@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { pool } from "@/lib/db";
 
 const DEFAULT_BATCH_SIZE = 5;
 
@@ -82,7 +81,7 @@ KETENTUAN IDENTITAS:
     try {
         const response = await fetch(`${baseURL}/chat/completions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey} ` },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
             body: JSON.stringify({
                 model,
                 messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }],
@@ -129,12 +128,22 @@ export async function POST(req: Request) {
         });
 
         // 1. ANALYZE INTENT
-        const intent = await analyzeIntent(apiKey, baseURL, model, userPrompt);
-        const requestedCount = Math.min(intent.count, 100);
-        const topic = intent.topic;
-        const keywords = intent.keywords.map((k: string) => k.toLowerCase());
+        let intent = await analyzeIntent(apiKey, baseURL, model, userPrompt);
+        let requestedCount = Math.min(intent.count || 10, 100);
+        let topic = intent.topic;
+        let keywords = (intent.keywords || []).map((k: string) => k.toLowerCase());
+        let isFallback = false;
 
-        console.log(`Intent Detected: Topic = "${topic}", Count = ${requestedCount}, Keywords = [${keywords.join(", ")}]`);
+        // FALLBACK: AI Gateway Maintenance
+        if (intent.message.includes("kesulitan") || intent.message.includes("masalah teknis") || intent.message.includes("Gateway Error")) {
+            console.log("AI Gateway Error. Entering Maintenance Mode...");
+            isFallback = true;
+            requestedCount = 0;
+            keywords = [];
+            intent.message = "Punten! Kathlyn sedang dalam pemeliharaan (Maintenance) sebentar nih. Silakan coba lagi nanti atau hubungi Admin/CS via Telegram kalau ada kendala mendesak ya! 🙏";
+        }
+
+        console.log(`Intent Status: ${isFallback ? "FALLBACK" : "OK"} | Topic = "${topic}", Count = ${requestedCount}, Keywords = [${keywords.join(", ")}]`);
 
         const uniqueMap = new Map();
 
@@ -156,43 +165,49 @@ export async function POST(req: Request) {
             console.log(`Provided Words added: ${uniqueMap.size} `);
         }
 
-        // 2. SMART LOCAL SEARCH (90%)
+        // 2. SMART DATABASE SEARCH (90%)
         try {
-            const dataPath = path.join(process.cwd(), "data", "vocab.json");
-            if (fs.existsSync(dataPath)) {
-                const localVocab = JSON.parse(fs.readFileSync(dataPath, "utf-8"));
-                if (Array.isArray(localVocab)) {
-                    // 100% From DB: AI only for intent/intent-filter
-                    const localPullLimit = requestedCount;
+            // Find words matching any of the keywords in meaning or word
+            if (keywords.length > 0) {
+                const likeConditions = keywords.map(() => "(meaning LIKE ? OR word LIKE ?)").join(" OR ");
+                const params = keywords.flatMap(kw => [`%${kw}%`, `%${kw}%`]);
 
-                    // Priority 1: Keyword matches
-                    const hotMatches = localVocab.filter(item => {
-                        const meaning = (item.meaning as string).toLowerCase();
-                        return keywords.some((kw: string) => meaning.includes(kw)) && isConversational(item.word);
-                    });
+                const [hotMatches]: any = await pool.execute(
+                    `SELECT word, meaning FROM master_vocab WHERE ${likeConditions}`,
+                    params
+                );
 
-                    hotMatches.forEach(item => {
-                        if (uniqueMap.size < localPullLimit) {
+                hotMatches.forEach((item: any) => {
+                    if (uniqueMap.size < requestedCount) {
+                        if (isConversational(item.word)) {
                             uniqueMap.set(normalizeWord(item.word), item);
                         }
-                    });
+                    }
+                });
+                console.log(`Hot Matches found in DB: ${uniqueMap.size}`);
+            }
 
-                    console.log(`Hot Matches found: ${uniqueMap.size} `);
+            // Priority 2: Random fill to reach requestedCount
+            // Only random fill if NOT in fallback mode (to avoid random words for "hallo")
+            // OR if some matches were already found (implying intent for vocab)
+            if (uniqueMap.size < requestedCount && (!isFallback || uniqueMap.size > 0)) {
+                const [randomRows]: any = await pool.execute(
+                    `SELECT word, meaning FROM master_vocab ORDER BY RAND() LIMIT ?`,
+                    [requestedCount * 2] // Pull extra to skip conversational blacklist/duplicates
+                );
 
-                    // Priority 2: Random fill to reach 100%
-                    if (uniqueMap.size < localPullLimit) {
-                        const shuffled = localVocab.sort(() => 0.5 - Math.random());
-                        for (const item of shuffled) {
-                            if (uniqueMap.size >= localPullLimit) break;
-                            const key = normalizeWord(item.word);
-                            if (!uniqueMap.has(key) && isConversational(item.word)) {
-                                uniqueMap.set(key, item);
-                            }
-                        }
+                for (const item of randomRows) {
+                    if (uniqueMap.size >= requestedCount) break;
+                    const key = normalizeWord(item.word);
+                    if (!uniqueMap.has(key) && isConversational(item.word)) {
+                        uniqueMap.set(key, item);
                     }
                 }
+                console.log(`Total words after random fill: ${uniqueMap.size}`);
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("DB Vocab Search Error:", e);
+        }
 
         // 3. AI COMPLETION REMOVED (User requested 100% DB)
         // AI remains only for Intent Analysis to get keywords

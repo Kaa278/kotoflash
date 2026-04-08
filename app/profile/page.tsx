@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getWords, getProfile, saveProfile, UserProfile, saveWords } from "@/lib/storage";
+import { getWords, getProfile, saveProfile, UserProfile, saveWords, isLoggedIn, clearAuth, syncWordsWithCloud } from "@/lib/storage";
 import {
     User,
     Settings,
@@ -12,12 +12,18 @@ import {
     Sparkles,
     ChevronRight,
     LogIn,
+    LogOut,
     Edit2,
     Info,
     Camera,
     Check,
-    Upload
+    Upload,
+    Cloud,
+    CloudOff,
+    Loader2
 } from "lucide-react";
+import AuthModal from "@/components/AuthModal";
+import { apiFetch } from "@/lib/api";
 
 export default function ProfilePage() {
     const [wordCount, setWordCount] = useState<number>(0);
@@ -25,6 +31,9 @@ export default function ProfilePage() {
     const [isDevModalOpen, setIsDevModalOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [isLoggedInState, setIsLoggedInState] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [hasDragged, setHasDragged] = useState(false);
     const [dragY, setDragY] = useState(0);
@@ -39,11 +48,39 @@ export default function ProfilePage() {
 
     useEffect(() => {
         setWordCount(getWords().length);
-        const p = getProfile();
-        setProfile(p);
-        setEditName(p.name);
-        setEditBio(p.bio);
-        setEditAvatar(p.avatar);
+        const loggedIn = isLoggedIn();
+        setIsLoggedInState(loggedIn);
+
+        if (loggedIn) {
+            // Fetch fresh profile from backend
+            apiFetch("/profile", { method: "GET" })
+                .then(p => {
+                    setProfile(p);
+                    setEditName(p.name || "");
+                    setEditBio(p.bio || "");
+                    setEditAvatar(p.avatar || "");
+                    saveProfile(p);
+                })
+                .catch(err => {
+                    console.error("Gagal ambil profil dari STB:", err);
+                    // Fallback to local
+                    const p = getProfile();
+                    setProfile(p);
+                });
+
+            // Sync vocabulary words
+            setIsSyncing(true);
+            syncWordsWithCloud()
+                .then(() => setWordCount(getWords().length))
+                .catch(err => console.error("Auto sync failed:", err))
+                .finally(() => setIsSyncing(false));
+        } else {
+            const p = getProfile();
+            setProfile(p);
+            setEditName(p.name || "");
+            setEditBio(p.bio || "");
+            setEditAvatar(p.avatar || "");
+        }
         setMounted(true);
     }, []);
 
@@ -54,12 +91,38 @@ export default function ProfilePage() {
         }
     }, [isDevModalOpen, isSettingsModalOpen, isEditModalOpen]);
 
-    const handleSaveProfile = (e: React.FormEvent) => {
+    const handleSaveProfile = async (e: React.FormEvent) => {
         e.preventDefault();
-        const updated = { name: editName, bio: editBio, avatar: editAvatar };
-        saveProfile(updated);
-        setProfile(updated);
-        setIsEditModalOpen(false);
+        const updated = { ...profile, name: editName, bio: editBio, avatar: editAvatar };
+
+        setIsSyncing(true);
+        try {
+            if (isLoggedInState) {
+                // Sync to STB
+                await apiFetch("/profile", {
+                    method: "PUT",
+                    body: JSON.stringify(updated)
+                });
+            }
+            saveProfile(updated);
+            setProfile(updated);
+            setIsEditModalOpen(false);
+        } catch (err) {
+            alert("Gagal sinkronisasi profil ke STB. Hubungkan kembali STB Anda.");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleLogout = () => {
+        if (confirm("Apakah Anda yakin ingin keluar?")) {
+            clearAuth();
+            setIsLoggedInState(false);
+            const guestProfile = { name: "Pengguna Tamu", bio: "Hafalkan kosa katanya, kuasai bahasanya." };
+            setProfile(guestProfile);
+            setEditName(guestProfile.name || "");
+            setEditBio(guestProfile.bio || "");
+        }
     };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,30 +214,52 @@ export default function ProfilePage() {
     if (!mounted) return null;
 
     return (
-        <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-10 w-full animate-in fade-in duration-500 bg-white min-h-full pb-24 md:pb-10">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-10 w-full animate-in fade-in duration-500 bg-white min-h-full pb-20 md:pb-10">
             {/* Profile Header */}
-            <div className="mb-12 flex flex-col items-center text-center space-y-6">
+            <div className="mb-4 md:mb-12 flex flex-col items-center text-center space-y-4 md:space-y-6">
                 <div className="relative group">
-                    <div className="w-32 h-32 bg-slate-50 rounded-[3rem] border-4 border-red-50 flex items-center justify-center shadow-lg shadow-red-500/5 overflow-hidden group-hover:border-[#BC002D] transition-all duration-300">
+                    <div className="w-32 h-32 bg-slate-50 rounded-[3rem] border-4 border-red-50 flex items-center justify-center shadow-2xl shadow-red-500/10 overflow-hidden group-hover:border-[#BC002D] transition-all duration-500 transform group-hover:scale-105">
                         {profile.avatar ? (
                             <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                            <User className="w-16 h-16 text-slate-300 group-hover:text-[#BC002D] transition-colors" />
+                            <div className="w-full h-full bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+                                <User className="w-16 h-16 text-slate-300 group-hover:text-[#BC002D] transition-colors" />
+                            </div>
                         )}
                     </div>
                 </div>
                 <div>
                     <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">{profile.name}</h1>
-                    <p className="text-sm md:text-lg text-slate-500 font-medium mt-1">{profile.bio}</p>
+                    {profile.id && (
+                        <p className="text-[10px] md:text-xs font-black text-[#BC002D] bg-red-50 px-3 py-1 rounded-full border border-red-100 inline-block mt-1.5 uppercase tracking-[0.2em]">
+                            ID: {profile.id}
+                        </p>
+                    )}
+                    <p className="text-sm md:text-lg text-slate-500 font-medium mt-1.5">{profile.bio}</p>
                 </div>
-                <button className="flex items-center space-x-3 px-8 py-3.5 bg-slate-900 hover:bg-black text-white rounded-2xl font-bold transition-all shadow-xl shadow-slate-900/10 active:scale-95">
-                    <LogIn className="w-5 h-5" />
-                    <span>Masuk / Daftar</span>
-                </button>
+                {isLoggedInState ? (
+                    <div className="flex flex-col items-center space-y-4">
+                        <div className="h-2" />
+                        <div className="flex flex-col items-center space-y-4">
+                            <div className="h-2" />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center space-y-4">
+                        <div className="h-2" />
+                        <button
+                            onClick={() => setIsAuthModalOpen(true)}
+                            className="flex items-center space-x-3 px-8 py-3.5 bg-[#BC002D] hover:bg-red-700 text-white rounded-2xl font-bold transition-all shadow-xl shadow-red-500/20 active:scale-95 animate-in fade-in slide-in-from-bottom-2"
+                        >
+                            <LogIn className="w-5 h-5" />
+                            <span>Masuk / Daftar</span>
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Profile Menu Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                 {/* Edit Profile */}
                 <button
                     onClick={() => setIsEditModalOpen(true)}
@@ -259,18 +344,18 @@ export default function ProfilePage() {
                     >
                         {/* Drag Zone for Mobile */}
                         <div
-                            className="pt-6 pb-6 md:hidden touch-none select-none cursor-grab active:cursor-grabbing shrink-0 flex flex-col items-center"
+                            className="pt-6 pb-2 md:hidden touch-none select-none cursor-grab active:cursor-grabbing shrink-0 flex flex-col items-center"
                             onPointerDown={handlePointerDown}
                             onPointerMove={handlePointerMove}
                             onPointerUp={(e) => handlePointerUp(e, () => setIsDevModalOpen(false))}
                             onPointerCancel={(e) => handlePointerUp(e, () => setIsDevModalOpen(false))}
                         >
-                            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto" />
+                            <div className="w-12 h-1.2 bg-slate-200 rounded-full mx-auto" />
                         </div>
 
                         {/* Content Area */}
-                        <div className="p-6 md:p-8 pt-0 md:pt-8 overflow-y-auto flex-1">
-                            <div className="flex flex-col md:flex-row gap-8 items-center md:items-start text-center md:text-left mb-8 pb-8 border-b border-slate-100 mt-4 md:mt-0">
+                        <div className="p-6 md:p-8 pt-2 md:pt-8 overflow-y-auto flex-1">
+                            <div className="flex flex-col md:flex-row gap-6 items-center md:items-start text-center md:text-left mb-6 pb-6 border-b border-slate-100 mt-2 md:mt-0">
                                 <div className="w-24 h-24 bg-slate-100 rounded-[2rem] border-2 border-red-100 flex items-center justify-center shadow-inner overflow-hidden">
                                     <User className="w-10 h-10 text-slate-300" />
                                 </div>
@@ -351,26 +436,26 @@ export default function ProfilePage() {
                             onPointerCancel={(e) => handlePointerUp(e, () => setIsSettingsModalOpen(false))}
                         >
                             <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4" />
-                            <div className="px-8 pb-4 border-b border-slate-100">
-                                <h2 className="text-2xl font-bold text-slate-900">Pengaturan Aplikasi</h2>
+                            <div className="px-6 pb-2 border-b border-slate-100">
+                                <h2 className="text-xl font-bold text-slate-900">Pengaturan Aplikasi</h2>
                             </div>
                         </div>
 
-                        <div className="p-8 pt-0 md:pt-8 overflow-y-auto flex-1">
+                        <div className="p-4 md:p-8 pt-2 md:pt-8 overflow-y-auto flex-1">
                             {/* Desktop/Tablet Header */}
-                            <div className="hidden md:flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
+                            <div className="hidden md:flex items-center justify-between mb-6 pb-2 border-b border-slate-100">
                                 <h2 className="text-2xl font-bold text-slate-900">Pengaturan Aplikasi</h2>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                                 {/* Data Section */}
-                                <div className="bg-white rounded-3xl border border-slate-200/60 p-6 space-y-6">
-                                    <div className="flex items-center space-x-3 text-slate-400 mb-2">
+                                <div className="bg-white rounded-3xl border border-slate-200/60 p-5 space-y-4">
+                                    <div className="flex items-center space-x-3 text-slate-400 mb-1">
                                         <Database className="w-5 h-5" />
-                                        <h2 className="text-xs font-black uppercase tracking-widest">Data & Cadangan</h2>
+                                        <h2 className="text-[10px] font-black uppercase tracking-widest">Data & Cadangan</h2>
                                     </div>
 
-                                    <div className="space-y-4">
+                                    <div className="space-y-3">
                                         <div className="space-y-1 px-1">
                                             <p className="font-bold text-slate-900">Data & Cadangan</p>
                                             <p className="text-xs text-slate-500 leading-relaxed">
@@ -405,40 +490,53 @@ export default function ProfilePage() {
                                 </div>
 
                                 {/* Features Section */}
-                                <div className="bg-white rounded-3xl border border-slate-200/60 p-6">
-                                    <div className="flex items-center space-x-3 text-red-500 mb-6">
-                                        <Cpu className="w-5 h-5" />
-                                        <h2 className="text-xs font-black uppercase tracking-widest">Lanjutan</h2>
+                                <div className="bg-white rounded-3xl border border-slate-200/60 p-5 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center space-x-3 text-red-500 mb-4">
+                                            <Cpu className="w-5 h-5" />
+                                            <h2 className="text-[10px] font-black uppercase tracking-widest">Lanjutan</h2>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {[
+                                                { title: "Cloud Sync", icon: ShieldCheck, locked: true },
+                                                { title: "AI Generation", icon: Sparkles, locked: false }
+                                            ].map((item, i) => (
+                                                <div
+                                                    key={i}
+                                                    className={`flex items-center justify-between p-4 rounded-2xl border border-dashed border-red-100 ${item.locked ? 'opacity-60' : 'cursor-pointer hover:bg-red-50/50 hover:border-solid transition-colors'}`}
+                                                    onClick={() => !item.locked && (window.location.href = "/vocabulary")}
+                                                >
+                                                    <div className="flex items-center space-x-3">
+                                                        <div className="p-2 bg-red-50 rounded-xl">
+                                                            <item.icon className="w-4 h-4 text-red-400" />
+                                                        </div>
+                                                        <p className="font-bold text-slate-600 text-sm">{item.title}</p>
+                                                    </div>
+                                                    {item.locked ? (
+                                                        <div className="text-[9px] font-black text-red-300 uppercase tracking-widest px-1.5 py-0.5 border border-red-50 rounded-full">
+                                                            Terkunci
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-[9px] font-black text-green-500 uppercase tracking-widest px-1.5 py-0.5 border border-green-100 bg-green-50 rounded-full">
+                                                            Aktif
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    <div className="space-y-3">
-                                        {[
-                                            { title: "Cloud Sync", icon: ShieldCheck, locked: true },
-                                            { title: "AI Generation", icon: Sparkles, locked: false }
-                                        ].map((item, i) => (
-                                            <div
-                                                key={i}
-                                                className={`flex items-center justify-between p-4 rounded-2xl border border-dashed border-red-100 ${item.locked ? 'opacity-60' : 'cursor-pointer hover:bg-red-50/50 hover:border-solid transition-colors'}`}
-                                                onClick={() => !item.locked && (window.location.href = "/vocabulary")}
-                                            >
-                                                <div className="flex items-center space-x-3">
-                                                    <div className="p-2 bg-red-50 rounded-xl">
-                                                        <item.icon className="w-4 h-4 text-red-400" />
-                                                    </div>
-                                                    <p className="font-bold text-slate-600 text-sm">{item.title}</p>
-                                                </div>
-                                                {item.locked ? (
-                                                    <div className="text-[9px] font-black text-red-300 uppercase tracking-widest px-1.5 py-0.5 border border-red-50 rounded-full">
-                                                        Terkunci
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-[9px] font-black text-green-500 uppercase tracking-widest px-1.5 py-0.5 border border-green-100 bg-green-50 rounded-full">
-                                                        Aktif
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
+                                    {/* Logout Button in Settings */}
+                                    {isLoggedInState && (
+                                        <button
+                                            onClick={handleLogout}
+                                            className="mt-6 flex items-center justify-center space-x-3 px-6 py-3.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold transition-all active:scale-95 border border-red-100 hover:border-red-500 group shadow-sm hover:shadow-red-500/20"
+                                        >
+                                            <LogOut className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                                            <span>Keluar Akun</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -475,35 +573,41 @@ export default function ProfilePage() {
                             onPointerUp={(e) => handlePointerUp(e, () => setIsEditModalOpen(false))}
                             onPointerCancel={(e) => handlePointerUp(e, () => setIsEditModalOpen(false))}
                         >
-                            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-4" />
-                            <div className="px-6 pb-4 border-b border-slate-100">
-                                <h2 className="text-2xl font-bold text-slate-900">Edit Profil</h2>
+                            <div className="w-12 h-1.2 bg-slate-200 rounded-full mx-auto mb-4" />
+                            <div className="px-6 pb-2 border-b border-slate-100">
+                                <h2 className="text-xl font-bold text-slate-900">Edit Profil</h2>
                             </div>
                         </div>
 
-                        <div className="p-6 md:p-8 pt-0 md:pt-8 overflow-y-auto flex-1">
+                        <div className="p-6 md:p-8 pt-2 md:pt-8 overflow-y-auto flex-1">
                             {/* Desktop/Tablet Header */}
-                            <div className="hidden md:flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
+                            <div className="hidden md:flex items-center justify-between mb-6 pb-2 border-b border-slate-100">
                                 <h2 className="text-2xl font-bold text-slate-900">Edit Profil</h2>
                             </div>
 
-                            <form onSubmit={handleSaveProfile} className="space-y-6">
+                            <form onSubmit={handleSaveProfile} className="space-y-4">
                                 {/* Avatar Upload */}
                                 <div className="flex flex-col items-center space-y-4 mb-2">
-                                    <div className="relative">
-                                        <div className="w-24 h-24 bg-slate-50 rounded-[2rem] border-2 border-slate-100 flex items-center justify-center overflow-hidden">
+                                    <div className="relative cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                                        <div className="w-28 h-28 bg-slate-50 rounded-[2.5rem] border-4 border-slate-100 flex items-center justify-center overflow-hidden shadow-inner hover:border-red-100 transition-all">
                                             {editAvatar ? (
                                                 <img src={editAvatar} alt="Preview" className="w-full h-full object-cover" />
                                             ) : (
-                                                <User className="w-10 h-10 text-slate-200" />
+                                                <User className="w-12 h-12 text-slate-200" />
                                             )}
                                         </div>
-                                        <label className="absolute -bottom-2 -right-2 p-2.5 bg-slate-900 text-white rounded-xl cursor-pointer hover:bg-black transition-all shadow-lg active:scale-95">
+                                        <div className="absolute -bottom-1 -right-1 p-3 bg-[#BC002D] text-white rounded-2xl shadow-xl transform hover:scale-110 active:scale-90 transition-all">
                                             <Camera className="w-4 h-4" />
-                                            <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
-                                        </label>
+                                        </div>
                                     </div>
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ubah Foto</p>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Klik untuk Ubah Foto</p>
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        className="hidden"
+                                        accept="image/*"
+                                        onChange={handleImageChange}
+                                    />
                                 </div>
 
                                 <div className="space-y-2">
@@ -528,21 +632,21 @@ export default function ProfilePage() {
                                     />
                                 </div>
 
-                                <div className="flex gap-4 pt-2">
+                                <div className="flex gap-3 mt-2">
                                     <button
                                         type="button"
                                         onClick={() => setIsEditModalOpen(false)}
-                                        className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold transition-all flex-1"
+                                        className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold transition-all flex-1 text-sm"
                                     >
                                         Batal
                                     </button>
                                     <button
                                         type="submit"
-                                        disabled={!editName.trim()}
-                                        className="flex-[2] px-6 py-3.5 bg-[#BC002D] hover:bg-red-700 text-white rounded-2xl font-bold transition-all disabled:opacity-30 disabled:grayscale transform active:scale-95 shadow-lg shadow-red-500/20 flex items-center justify-center space-x-2"
+                                        disabled={!editName.trim() || isSyncing}
+                                        className="flex-[1.5] px-4 py-3 bg-[#BC002D] hover:bg-red-700 text-white rounded-2xl font-bold transition-all disabled:opacity-30 disabled:grayscale transform active:scale-95 shadow-lg shadow-red-500/20 flex items-center justify-center space-x-2 text-sm"
                                     >
-                                        <Check className="w-5 h-5" />
-                                        <span>Simpan Profil</span>
+                                        {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                        <span>{isSyncing ? "Simpan..." : "Simpan Profil"}</span>
                                     </button>
                                 </div>
                             </form>
@@ -550,6 +654,25 @@ export default function ProfilePage() {
                     </div>
                 </div>
             )}
+
+            <AuthModal
+                isOpen={isAuthModalOpen}
+                onClose={() => setIsAuthModalOpen(false)}
+                onSuccess={(p) => {
+                    setIsLoggedInState(true);
+                    setProfile(p);
+                    setEditName(p.name);
+                    setEditBio(p.bio);
+                    setEditAvatar(p.avatar);
+
+                    // Sync words immediately after login
+                    setIsSyncing(true);
+                    syncWordsWithCloud()
+                        .then(() => setWordCount(getWords().length))
+                        .catch(err => console.error("Login sync failed:", err))
+                        .finally(() => setIsSyncing(false));
+                }}
+            />
         </div>
     );
 }
